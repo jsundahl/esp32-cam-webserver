@@ -92,6 +92,11 @@ uint8_t temprature_sens_read();
 #endif
 
 void serialDump() {
+    // Gather static values used when dumping status; these are slow functions, so just do them once during startup
+    sketchSize = ESP.getSketchSize();
+    sketchSpace = ESP.getFreeSketchSpace();
+    sketchMD5 = ESP.getSketchMD5();
+
     Serial.println();
     // Module
     Serial.printf("Name: %s\r\n", myName);
@@ -183,7 +188,6 @@ static esp_err_t capture_handler(httpd_req_t *req){
         setLamp(lampVal);
         delay(75); // coupled with the status led flash this gives ~150ms for lamp to settle.
     }
-    flashLED(75); // little flash of status LED
 
     int64_t fr_start = esp_timer_get_time();
 
@@ -233,14 +237,6 @@ static esp_err_t stream_handler(httpd_req_t *req){
     Serial.println("Stream requested");
     if (autoLamp && (lampVal != -1)) setLamp(lampVal);
     streamCount = 1;  // at present we only have one stream handler, so values are 0 or 1..
-    flashLED(75);     // double flash of status LED
-    delay(75);
-    flashLED(75);
-
-    static int64_t last_frame = 0;
-    if(!last_frame) {
-        last_frame = esp_timer_get_time();
-    }
 
     res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
     if(res != ESP_OK){
@@ -299,24 +295,12 @@ static esp_err_t stream_handler(httpd_req_t *req){
             Serial.printf("Stream killed\r\n");
             break;
         }
-        int64_t frame_time = esp_timer_get_time() - last_frame;
-        frame_time /= 1000;
-        int32_t frame_delay = (minFrameTime > frame_time) ? minFrameTime - frame_time : 0;
-        delay(frame_delay);
-
-        if (debugData) {
-            Serial.printf("MJPG: %uB %ums, delay: %ums, framerate (%.1ffps)\r\n",
-                (uint32_t)(_jpg_buf_len),
-                (uint32_t)frame_time, frame_delay, 1000.0 / (uint32_t)(frame_time + frame_delay));
-        }
-        last_frame = esp_timer_get_time();
     }
 
     streamsServed++;
     streamCount = 0;
     if (autoLamp && (lampVal != -1)) setLamp(0);
     Serial.println("Stream ended");
-    last_frame = 0;
     return res;
 }
 
